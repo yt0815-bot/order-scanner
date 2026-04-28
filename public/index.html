@@ -142,9 +142,18 @@
     border-radius: 10px;
     padding: 14px 16px;
     text-align: center;
+    overflow: hidden;
+    min-width: 0;
   }
-  .summary-item .label { font-size: 0.78rem; color: #718096; margin-bottom: 4px; }
-  .summary-item .value { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+  .summary-item .label { font-size: 0.78rem; color: #718096; margin-bottom: 4px; white-space: nowrap; }
+  .summary-item .value {
+    font-size: clamp(0.95rem, 2.5vw, 1.5rem);
+    font-weight: 700;
+    color: #1a1a2e;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+  }
 
   /* テーブル */
   #result-area { display: none; }
@@ -167,6 +176,13 @@
     padding: 7px 10px;
     border-bottom: 1px solid #e2e8f0;
     white-space: nowrap;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  td[contenteditable="true"]:focus {
+    overflow: visible;
+    white-space: normal;
   }
   tr:hover td { background: #f7f9ff; }
   td[contenteditable="true"] { cursor: text; outline: none; }
