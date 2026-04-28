@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const Anthropic = require('@anthropic-ai/sdk');
+const Anthropic = require('anthropic');
 const ExcelJS = require('exceljs');
 const path = require('path');
 
