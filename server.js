@@ -19,13 +19,14 @@ const SYSTEM_PROMPT = `あなたはアパレル業界の発注書を読み取る
 
 ## 読み取りルール
 
-【ルール①】取り消し線
-横線で消されている数字・文字は旧値のため読み取らない。
-消されていない最新の値のみを採用する。
+【ルール①】取り消し線・修正箇所の除外
+- 横線（取り消し線）で消されている数字・文字は一切読み取らない。消されていない最新の値のみ採用する。
+- 数量（発注数）に取り消し線がある行、または数量が空欄・未記載の行は colors に含めない。
+- 数量が明確に記載されている行のみを対象とする。
 
 【ルール②】画像タイプの判定と品番・品名の処理
-- 国内発注書（Style No.欄・Item欄あり）：そのまま使用
-- 海外出張写真（品番・品名なし）：仮品番を001から連番で採番し、画像の商品特徴から仮品名を生成
+- 国内発注書（Style No.欄・Item欄あり）：そのまま使用。temp_no は null。
+- 海外出張写真（品番・品名なし）：temp_no はシステム側で付番するため必ず null を返す。画像の商品特徴から仮品名を生成すること。
   仮品名の例：「ジオメトリックプリントTシャツ」「ダブルブレストショートジャケット」「カーゴイージーパンツ」
 
 【ルール③】納期の読み取り
@@ -48,7 +49,7 @@ SAX/SX→サックス、RD/RED→レッド、BL/BLU→ブルー
 {
   "style_no": "品番またはnull",
   "item_name": "品名または仮品名",
-  "temp_no": "仮品番（例:001）またはnull",
+  "temp_no": null,
   "retail_price": 数値または null,
   "wholesale_price": 数値または null,
   "colors": [
@@ -56,7 +57,7 @@ SAX/SX→サックス、RD/RED→レッド、BL/BLU→ブルー
       "color_code": "カラーコード略称",
       "color_name": "カタカナカラー名",
       "deadline": "納期文字列または null（画像に記載がない場合は必ずnull）",
-      "quantity": 数値または null,
+      "quantity": 数値（必ず1以上の整数。未記載・取り消し線がある行はこの配列に含めない）,
       "note": "備考（丸囲み文字・特記事項）または空文字"
     }
   ],
@@ -85,7 +86,7 @@ async function analyzeImage(imageData, mimeType) {
           },
           {
             type: 'text',
-            text: 'この発注書画像から発注情報を読み取り、指定のJSONフォーマットで返してください。',
+            text: 'この発注書画像から発注情報を読み取り、指定のJSONフォーマットで返してください。数量が未記載・取り消し線がある行はcolorsに含めないでください。',
           },
         ],
       },
@@ -93,25 +94,46 @@ async function analyzeImage(imageData, mimeType) {
   });
 
   const text = response.content[0].text.trim();
-  // JSONブロックの抽出（```json ... ``` または裸のJSONに対応）
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
   const jsonText = jsonMatch ? jsonMatch[1] : text;
   return JSON.parse(jsonText);
 }
 
+// 後処理: 仮品番付番 + 数量なし行の除外
+function postProcess(parsed, imageIndex) {
+  // 仮品番: style_no がない画像には画像番号ベースで1つ付番
+  if (!parsed.style_no) {
+    parsed.temp_no = String(imageIndex + 1).padStart(3, '0');
+  } else {
+    parsed.temp_no = null;
+  }
+
+  // 数量が null / 0 / 未定義のカラー行を除外
+  if (Array.isArray(parsed.colors)) {
+    parsed.colors = parsed.colors.filter(c => {
+      const qty = Number(c.quantity);
+      return !isNaN(qty) && qty > 0;
+    });
+  }
+
+  return parsed;
+}
+
 // POST /api/analyze
 app.post('/api/analyze', async (req, res) => {
   try {
-    const { images } = req.body;
+    const { images, imageIndexOffset = 0 } = req.body;
     if (!images || !Array.isArray(images) || images.length === 0) {
       return res.status(400).json({ error: '画像データが必要です' });
     }
 
     const results = [];
-    for (const img of images) {
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
       try {
         const parsed = await analyzeImage(img.data, img.mimeType || 'image/jpeg');
-        results.push({ success: true, data: parsed });
+        const processed = postProcess(parsed, imageIndexOffset + i);
+        results.push({ success: true, data: processed });
       } catch (err) {
         results.push({ success: false, error: err.message });
       }

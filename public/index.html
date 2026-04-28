@@ -298,8 +298,9 @@
 <script>
 (() => {
   // ---- State ----
-  let files = [];       // { file, objectUrl }
-  let tableRows = [];   // { style_no, temp_no, item_name, color_code, color_name, deadline, retail_price, wholesale_price, quantity, note, country }
+  let files = [];              // { file, objectUrl }
+  let tableRows = [];          // 明細行
+  let analyzedImageCount = 0;  // 仮品番付番の通し番号用
 
   // ---- DOM refs ----
   const dropZone = document.getElementById('drop-zone');
@@ -384,7 +385,7 @@
         const res = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ images: [images[i]] }),
+          body: JSON.stringify({ images: [images[i]], imageIndexOffset: analyzedImageCount + i }),
         });
         const json = await res.json();
         const result = json.results[0];
@@ -450,6 +451,7 @@
       progressArea.appendChild(errDiv);
     }
 
+    analyzedImageCount += images.length;
     analyzeBtn.disabled = false;
   });
 
@@ -616,6 +618,7 @@
     files.forEach(f => URL.revokeObjectURL(f.objectUrl));
     files = [];
     tableRows = [];
+    analyzedImageCount = 0;
     renderThumbs();
     renderTable();
     updateSummary();
