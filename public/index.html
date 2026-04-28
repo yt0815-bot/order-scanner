@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>発注書スキャナー</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f6fa; color: #333; min-height: 100vh; }
+
+  header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff;
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.05em; }
+  header span { font-size: 1.6rem; }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 24px 16px; }
+
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .card h2 { font-size: 1rem; font-weight: 700; color: #1a1a2e; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
+
+  /* ドロップゾーン */
+  #drop-zone {
+    border: 2px dashed #a0aec0;
+    border-radius: 10px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #f8faff;
+  }
+  #drop-zone:hover, #drop-zone.drag-over {
+    border-color: #4a6cf7;
+    background: #eef2ff;
+  }
+  #drop-zone .icon { font-size: 2.8rem; margin-bottom: 10px; }
+  #drop-zone p { color: #718096; font-size: 0.9rem; }
+  #drop-zone p strong { color: #4a6cf7; }
+  #file-input { display: none; }
+
+  /* サムネイル */
+  #thumbnail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .thumb-item {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 1;
+    background: #eee;
+  }
+  .thumb-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb-item .del-btn {
+    position: absolute;
+    top: 4px; right: 4px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 22px; height: 22px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .thumb-item .thumb-num {
+    position: absolute;
+    bottom: 4px; left: 4px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  /* ボタン */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 22px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-primary { background: #4a6cf7; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #3655d8; }
+  .btn-success { background: #38a169; color: #fff; }
+  .btn-success:hover:not(:disabled) { background: #276749; }
+  .btn-danger { background: #e53e3e; color: #fff; }
+  .btn-danger:hover:not(:disabled) { background: #c53030; }
+  .btn-sm { padding: 5px 12px; font-size: 0.82rem; }
+
+  .action-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+  /* 進捗 */
+  #progress-area { display: none; }
+  .progress-bar-wrap {
+    background: #e2e8f0;
+    border-radius: 999px;
+    height: 8px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .progress-bar-inner {
+    height: 100%;
+    background: #4a6cf7;
+    border-radius: 999px;
+    transition: width 0.3s;
+    width: 0%;
+  }
+  #progress-text { font-size: 0.88rem; color: #555; margin-top: 6px; }
+
+  /* サマリー */
+  #summary-area { display: none; }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .summary-item {
+    background: #f0f4ff;
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+  }
+  .summary-item .label { font-size: 0.78rem; color: #718096; margin-bottom: 4px; }
+  .summary-item .value { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+
+  /* テーブル */
+  #result-area { display: none; }
+  .table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  th {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 9px 10px;
+    white-space: nowrap;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+  }
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    white-space: nowrap;
+  }
+  tr:hover td { background: #f7f9ff; }
+  td[contenteditable="true"] { cursor: text; outline: none; }
+  td[contenteditable="true"]:focus {
+    background: #fffbeb;
+    box-shadow: inset 0 0 0 2px #f6ad55;
+  }
+  .del-row-btn {
+    background: #fed7d7;
+    color: #c53030;
+    border: none;
+    border-radius: 5px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 0.78rem;
+  }
+  .del-row-btn:hover { background: #feb2b2; }
+  .add-row-btn {
+    background: #c6f6d5;
+    color: #276749;
+    border: none;
+    border-radius: 5px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    margin-top: 8px;
+  }
+  .add-row-btn:hover { background: #9ae6b4; }
+
+  .error-chip {
+    display: inline-block;
+    background: #fff5f5;
+    border: 1px solid #fc8181;
+    color: #c53030;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.82rem;
+    margin: 4px 0;
+  }
+
+  /* image_note */
+  .img-note { font-size: 0.78rem; color: #718096; font-style: italic; }
+
+  @media (max-width: 600px) {
+    main { padding: 12px 8px; }
+    .card { padding: 16px 14px; }
+    header h1 { font-size: 1.1rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span>📋</span>
+  <h1>発注書スキャナー</h1>
+</header>
+
+<main>
+
+  <!-- アップロード -->
+  <div class="card">
+    <h2>📁 画像アップロード</h2>
+    <div id="drop-zone">
+      <div class="icon">🖼️</div>
+      <p><strong>クリック</strong>またはドラッグ＆ドロップで画像を追加</p>
+      <p style="margin-top:6px;">JPEG / PNG / HEIC 対応 &nbsp;·&nbsp; 複数枚同時可</p>
+    </div>
+    <input type="file" id="file-input" accept="image/*,.heic,.heif" multiple>
+    <div id="thumbnail-grid"></div>
+    <div class="action-bar">
+      <button class="btn btn-primary" id="analyze-btn" disabled>🤖 AIで読み取る</button>
+      <button class="btn btn-danger" id="reset-btn">🗑️ データをリセット</button>
+    </div>
+  </div>
+
+  <!-- 進捗 -->
+  <div class="card" id="progress-area">
+    <h2>⏳ 処理中</h2>
+    <div id="progress-text">準備中...</div>
+    <div class="progress-bar-wrap"><div class="progress-bar-inner" id="progress-bar"></div></div>
+  </div>
+
+  <!-- サマリー -->
+  <div class="card" id="summary-area">
+    <h2>📊 集計サマリー</h2>
+    <div class="summary-grid">
+      <div class="summary-item"><div class="label">合計枚数</div><div class="value" id="sum-qty">0</div></div>
+      <div class="summary-item"><div class="label">合計下代</div><div class="value" id="sum-w">¥0</div></div>
+      <div class="summary-item"><div class="label">合計上代</div><div class="value" id="sum-r">¥0</div></div>
+      <div class="summary-item"><div class="label">スタイル数</div><div class="value" id="sum-style">0</div></div>
+    </div>
+  </div>
+
+  <!-- 結果テーブル -->
+  <div class="card" id="result-area">
+    <h2>📝 発注明細</h2>
+    <div class="table-wrap">
+      <table id="result-table">
+        <thead>
+          <tr>
+            <th>品番</th>
+            <th>仮品番</th>
+            <th>品名</th>
+            <th>カラーコード</th>
+            <th>カラー名</th>
+            <th>納期</th>
+            <th>上代</th>
+            <th>掛け率</th>
+            <th>下代</th>
+            <th>枚数</th>
+            <th>小計(下代)</th>
+            <th>小計(上代)</th>
+            <th>備考</th>
+            <th>生産国</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="result-tbody"></tbody>
+      </table>
+    </div>
+    <button class="add-row-btn" id="add-row-btn">＋ 行を追加</button>
+    <div class="action-bar" style="margin-top:14px;">
+      <button class="btn btn-success" id="export-btn">📥 Excelダウンロード</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+(() => {
+  // ---- State ----
+  let files = [];       // { file, objectUrl }
+  let tableRows = [];   // { style_no, temp_no, item_name, color_code, color_name, deadline, retail_price, wholesale_price, quantity, note, country }
+
+  // ---- DOM refs ----
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const thumbGrid = document.getElementById('thumbnail-grid');
+  const analyzeBtn = document.getElementById('analyze-btn');
+  const resetBtn = document.getElementById('reset-btn');
+  const progressArea = document.getElementById('progress-area');
+  const progressBar = document.getElementById('progress-bar');
+  const progressText = document.getElementById('progress-text');
+  const summaryArea = document.getElementById('summary-area');
+  const resultArea = document.getElementById('result-area');
+  const tbody = document.getElementById('result-tbody');
+  const exportBtn = document.getElementById('export-btn');
+  const addRowBtn = document.getElementById('add-row-btn');
+
+  // ---- Upload ----
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    addFiles([...e.dataTransfer.files]);
+  });
+  fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+
+  function addFiles(newFiles) {
+    newFiles.forEach(f => {
+      if (f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)) {
+        files.push({ file: f, objectUrl: URL.createObjectURL(f) });
+      }
+    });
+    renderThumbs();
+    analyzeBtn.disabled = files.length === 0;
+  }
+
+  function renderThumbs() {
+    thumbGrid.innerHTML = '';
+    files.forEach((item, i) => {
+      const div = document.createElement('div');
+      div.className = 'thumb-item';
+      div.innerHTML = `
+        <img src="${item.objectUrl}" alt="画像${i+1}">
+        <button class="del-btn" data-i="${i}">✕</button>
+        <span class="thumb-num">${i+1}</span>
+      `;
+      thumbGrid.appendChild(div);
+    });
+    thumbGrid.querySelectorAll('.del-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const i = Number(btn.dataset.i);
+        URL.revokeObjectURL(files[i].objectUrl);
+        files.splice(i, 1);
+        renderThumbs();
+        analyzeBtn.disabled = files.length === 0;
+      });
+    });
+  }
+
+  // ---- Analyze ----
+  analyzeBtn.addEventListener('click', async () => {
+    if (files.length === 0) return;
+    analyzeBtn.disabled = true;
+    progressArea.style.display = 'block';
+    progressBar.style.width = '0%';
+
+    const images = [];
+    for (const item of files) {
+      const b64 = await fileToBase64(item.file);
+      images.push({ data: b64, mimeType: item.file.type || 'image/jpeg' });
+    }
+
+    const newRows = [];
+    const errors = [];
+    for (let i = 0; i < images.length; i++) {
+      progressText.textContent = `${images.length}枚中${i + 1}枚処理中...`;
+      progressBar.style.width = `${Math.round(((i) / images.length) * 100)}%`;
+
+      try {
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ images: [images[i]] }),
+        });
+        const json = await res.json();
+        const result = json.results[0];
+        if (result.success) {
+          const d = result.data;
+          if (d.colors && d.colors.length > 0) {
+            d.colors.forEach(c => {
+              newRows.push({
+                style_no: d.style_no || '',
+                temp_no: d.temp_no || '',
+                item_name: d.item_name || '',
+                color_code: c.color_code || '',
+                color_name: c.color_name || '',
+                deadline: c.deadline || '',
+                retail_price: d.retail_price || '',
+                wholesale_price: d.wholesale_price || '',
+                quantity: c.quantity || '',
+                note: c.note || '',
+                country: d.country || '',
+                _image_note: d.image_note || '',
+              });
+            });
+          } else {
+            newRows.push({
+              style_no: d.style_no || '',
+              temp_no: d.temp_no || '',
+              item_name: d.item_name || '',
+              color_code: '',
+              color_name: '',
+              deadline: '',
+              retail_price: d.retail_price || '',
+              wholesale_price: d.wholesale_price || '',
+              quantity: d.total_quantity || '',
+              note: '',
+              country: d.country || '',
+              _image_note: d.image_note || '',
+            });
+          }
+        } else {
+          errors.push(`画像${i + 1}: ${result.error}`);
+        }
+      } catch (err) {
+        errors.push(`画像${i + 1}: ${err.message}`);
+      }
+    }
+
+    progressBar.style.width = '100%';
+    progressText.textContent = `完了！ ${images.length}枚処理しました。`;
+
+    tableRows = [...tableRows, ...newRows];
+    renderTable();
+    updateSummary();
+
+    if (errors.length > 0) {
+      const errDiv = document.createElement('div');
+      errDiv.style.marginTop = '8px';
+      errors.forEach(e => {
+        const chip = document.createElement('div');
+        chip.className = 'error-chip';
+        chip.textContent = '⚠️ ' + e;
+        errDiv.appendChild(chip);
+      });
+      progressArea.appendChild(errDiv);
+    }
+
+    analyzeBtn.disabled = false;
+  });
+
+  // ---- Table ----
+  const COLS = [
+    { key: 'style_no', label: '品番' },
+    { key: 'temp_no', label: '仮品番' },
+    { key: 'item_name', label: '品名' },
+    { key: 'color_code', label: 'カラーコード' },
+    { key: 'color_name', label: 'カラー名' },
+    { key: 'deadline', label: '納期' },
+    { key: 'retail_price', label: '上代', numeric: true },
+    { key: '_rate', label: '掛け率', computed: true },
+    { key: 'wholesale_price', label: '下代', numeric: true },
+    { key: 'quantity', label: '枚数', numeric: true },
+    { key: '_subtotal_w', label: '小計(下代)', computed: true },
+    { key: '_subtotal_r', label: '小計(上代)', computed: true },
+    { key: 'note', label: '備考' },
+    { key: 'country', label: '生産国' },
+  ];
+
+  function calcRow(row) {
+    const rp = Number(row.retail_price) || 0;
+    const wp = Number(row.wholesale_price) || 0;
+    const qty = Number(row.quantity) || 0;
+    return {
+      _rate: rp > 0 ? (wp / rp * 100).toFixed(1) + '%' : '',
+      _subtotal_w: wp && qty ? fmtCurrency(wp * qty) : '',
+      _subtotal_r: rp && qty ? fmtCurrency(rp * qty) : '',
+    };
+  }
+
+  function fmtCurrency(n) {
+    return '¥' + Number(n).toLocaleString('ja-JP');
+  }
+
+  function renderTable() {
+    tbody.innerHTML = '';
+    tableRows.forEach((row, rowIdx) => {
+      const computed = calcRow(row);
+      const tr = document.createElement('tr');
+
+      COLS.forEach(col => {
+        const td = document.createElement('td');
+        if (col.computed) {
+          td.textContent = computed[col.key] || '';
+          td.style.color = '#555';
+        } else {
+          const val = row[col.key];
+          td.textContent = val !== undefined && val !== null ? val : '';
+          td.contentEditable = 'true';
+          td.dataset.row = rowIdx;
+          td.dataset.col = col.key;
+          td.addEventListener('blur', onCellBlur);
+        }
+        tr.appendChild(td);
+      });
+
+      // 注記
+      if (row._image_note) {
+        const noteTd = tr.querySelector('td:last-child');
+        if (noteTd) {
+          const noteSpan = document.createElement('div');
+          noteSpan.className = 'img-note';
+          noteSpan.textContent = '📌 ' + row._image_note;
+          noteTd.appendChild(noteSpan);
+        }
+      }
+
+      // 削除ボタン
+      const delTd = document.createElement('td');
+      const delBtn = document.createElement('button');
+      delBtn.className = 'del-row-btn';
+      delBtn.textContent = '削除';
+      delBtn.dataset.row = rowIdx;
+      delBtn.addEventListener('click', () => {
+        tableRows.splice(rowIdx, 1);
+        renderTable();
+        updateSummary();
+      });
+      delTd.appendChild(delBtn);
+      tr.appendChild(delTd);
+
+      tbody.appendChild(tr);
+    });
+
+    resultArea.style.display = tableRows.length > 0 ? 'block' : 'none';
+    summaryArea.style.display = tableRows.length > 0 ? 'block' : 'none';
+  }
+
+  function onCellBlur(e) {
+    const td = e.currentTarget;
+    const rowIdx = Number(td.dataset.row);
+    const colKey = td.dataset.col;
+    tableRows[rowIdx][colKey] = td.textContent.trim();
+    // computed列を再描画
+    const tr = td.parentElement;
+    const computed = calcRow(tableRows[rowIdx]);
+    COLS.forEach((col, ci) => {
+      if (col.computed) {
+        tr.cells[ci].textContent = computed[col.key] || '';
+      }
+    });
+    updateSummary();
+  }
+
+  addRowBtn.addEventListener('click', () => {
+    tableRows.push({
+      style_no: '', temp_no: '', item_name: '', color_code: '', color_name: '',
+      deadline: '', retail_price: '', wholesale_price: '', quantity: '', note: '', country: '',
+    });
+    renderTable();
+    updateSummary();
+  });
+
+  // ---- Summary ----
+  function updateSummary() {
+    let qty = 0, sw = 0, sr = 0;
+    const styles = new Set();
+    tableRows.forEach(row => {
+      const q = Number(row.quantity) || 0;
+      const rp = Number(row.retail_price) || 0;
+      const wp = Number(row.wholesale_price) || 0;
+      qty += q;
+      sw += q * wp;
+      sr += q * rp;
+      const sk = row.style_no || row.temp_no || row.item_name;
+      if (sk) styles.add(sk);
+    });
+    document.getElementById('sum-qty').textContent = qty.toLocaleString('ja-JP');
+    document.getElementById('sum-w').textContent = fmtCurrency(sw);
+    document.getElementById('sum-r').textContent = fmtCurrency(sr);
+    document.getElementById('sum-style').textContent = styles.size;
+  }
+
+  // ---- Export ----
+  exportBtn.addEventListener('click', async () => {
+    exportBtn.disabled = true;
+    try {
+      const now = new Date();
+      const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const res = await fetch('/api/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: tableRows, filename: `発注集計_${yyyymmdd}` }),
+      });
+      if (!res.ok) throw new Error('Excelの生成に失敗しました');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `発注集計_${yyyymmdd}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.message);
+    }
+    exportBtn.disabled = false;
+  });
+
+  // ---- Reset ----
+  resetBtn.addEventListener('click', () => {
+    if (!confirm('すべてのデータをリセットしますか？')) return;
+    files.forEach(f => URL.revokeObjectURL(f.objectUrl));
+    files = [];
+    tableRows = [];
+    renderThumbs();
+    renderTable();
+    updateSummary();
+    progressArea.style.display = 'none';
+    progressBar.style.width = '0%';
+    analyzeBtn.disabled = true;
+  });
+
+  // ---- Util ----
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+})();
+</script>
+</body>
+</html>
